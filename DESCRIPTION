@@ -1,0 +1,18 @@
+Package: DamIDseq
+Type: Package
+Title: DamID-seq pipeline (Adapter removal, Mapping to genome, analyzing)
+Version: 0.1.1
+Date: 2015-12-21
+Author: Dominic Ritler
+Maintainer: Dominic Ritler <dominic.ritler@students.unibe.ch>
+Depends: QuasR, ShortRead, corrplot, aqfig
+Imports: methods, zlibbioc, parallel, GenomicRanges,
+         S4Vectors, IRanges, BiocInstaller,
+         Biobase, Biostrings, BSgenome,
+         GenomicFeatures (>= 1.17.13),
+         GenomicAlignments, BiocParallel, GenomeInfoDb,
+	       rtracklayer, GenomicFiles
+Description: A all in R DamID-sequencing tool for processing and analyzing DamID-seq data.
+License: GPL-2
+Archs: x64
+LazyData: TRUE
