@@ -5,7 +5,7 @@
 damid.seq(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
           bin.len=100000, adapt.seq="CGCGGCCGAG", errors=1, mapping=T, qc=T,
           species="BSgenome.Celegans.UCSC.ce10", chr.names = NULL,
-          restr.seq="GATC", normali=T, log10t=T, fasta.format="fastq")
+          restr.seq="GATC", normali=T, log10t=T, fasta.format="fastq", m.hits=1)
 }
 \description{
 Full DamID-seq pipeline. Includes adapter removal, Mapping and enrichment finding.
@@ -32,6 +32,7 @@ Full DamID-seq pipeline. Includes adapter removal, Mapping and enrichment findin
   \item{normali}{ if \code{TRUE}, the reads are normalized by dividing the reads in a bin by the total reads number of the sample. }
   \item{log10t}{ if \code{TRUE}, reads per bin are log transformed in qc plots }
   \item{fasta.format}{ input format either "fastq" (fastq, fastq.gz) or "fasta" }
+  \item{m.hits}{Number of mapping positions allowed per read for bowtie mapping (1 = only unique mappable reads are mapped)}
   \item{\dots}{ not used. }
 }
 
@@ -75,7 +76,7 @@ damid.seq(raw.file.name = "raw-file.txt", multi.core = T,
           exp.name = "test", bin.len = 100000, errors = 1,
           mapping = T, qc = F, species = "BSgenome.Celegans.UCSC.ce10",
           chr.names = NULL, restr.seq = "GATC", normali = T, log10t = F,
-          fasta.format = "fastq")
+          fasta.format = "fastq", m.hits = 1)
 
 
 

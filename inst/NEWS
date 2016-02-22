@@ -1,3 +1,10 @@
+CHANGES IN VERSION 0.1.2
+-----------------------
+
+    o Small bug fixes
+    o Allow setting the maximal mapping positions per read (default: 1)
+
+
 CHANGES IN VERSION 0.1.1
 -----------------------
 

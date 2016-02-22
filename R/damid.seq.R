@@ -1199,14 +1199,18 @@ plot.correlation <- function(grange, samp, cont, type="a", timesp=0,
   # cl.lim (test if negative correlation and if true make cl.lim = -1,1)
   if (min(cor.gatc) < 0) {
     cor.lim <- c(-1,1)
+    # color panel for the correlations -1 to 1
+    colpal <- colorRampPalette (c("#7F0001", "#FFA501", "#808081", "#045A8E",
+                                  "#00007E", "#045A8D", "lightgray",
+                                  "orange", "#7F0000"))(300)
   } else {
     cor.lim <- c(0,1)
+    # color panel for the correlations 0 to 1
+    colpal <- colorRampPalette (c("#00007F","#045A8D","lightgray", "orange",
+                                  "#7F0000","#00007F","#045A8D","lightgray",
+                                  "orange", "#7F0000"))(300)
   }
 
-  # color panel for the correlations
-  colpal <- colorRampPalette(c("#00007F", "#045A8D", "lightgray", "orange",
-                               "#7F0000", "#00007F", "#045A8D", "lightgray",
-                               "orange", "#7F0000"))(300)
   # first plot for the color plot
   corrplot(cor.gatc, method = "color", type = "lower", hclust = "complete",
            cl.lim = cor.lim, col = colpal, order = "hclust", outline = FALSE,
@@ -1777,7 +1781,7 @@ make.cutadapt.fasta <- function(read.list, adapter="CGCGGCCGAG", error.a=1,
 ##                              bowtie                                        ##
 ################################################################################
 make.bowtie <- function(fastq.files, multi.core=F, genome.name, pr.name,
-                        dir.name.bt) {
+                        dir.name.bt, m.hits=1) {
   # map all cut sequences to genome using bowtie (QuasR pipeline)
   #
   # Args:
@@ -1786,7 +1790,8 @@ make.bowtie <- function(fastq.files, multi.core=F, genome.name, pr.name,
   #   multi.core: (Boolean) T = enables multicore functionality
   #   genome.name: (string) the name of the BSgenome package
   #   pr.name:     (string) the name of the project
-  #   dir.name.bt  (string) the name of the folder to store the .sam/.bam reads
+  #   dir.name.bt: (string) the name of the folder to store the .sam/.bam reads
+  #   m.hits:         (int) the number of maximal hits allowed
   #
   # Return:
   #   save location of mapped .sam/.bam file
@@ -1799,14 +1804,14 @@ make.bowtie <- function(fastq.files, multi.core=F, genome.name, pr.name,
     clusts <- makeCluster(num.of.cores)
     # the bowtie mapping
     test <- qAlign(fastq.files, genome  =  genome.name,
-                   aligner = "Rbowtie", maxHits = 1,
+                   aligner = "Rbowtie", maxHits = m.hits,
                    alignmentsDir = file.path(getwd(), dir.name.bt),
                    clObj =  clusts, projectName = pr.name)
     stopCluster(clusts) # stop cluster
   } else {
     # the bowtie mapping without multicore
     test <- qAlign(fastq.files, genome  =  genome.name,
-                   aligner = "Rbowtie", maxHits = 1,
+                   aligner = "Rbowtie", maxHits = m.hits,
                    alignmentsDir = file.path(getwd(), dir.name.bt),
                    projectName = pr.name)
   }
@@ -2007,7 +2012,7 @@ from.fastq.to.grange <- function(raw.files, multi.core, exp.name, adapt.seq,
                                  genome.name, chromosom.nams,
                                  restrict.site="GATC", fasta.form="fastq",
                                  dir.name.ca, dir.name.bt, dir.name.gr,
-                                 res.site.grages) {
+                                 res.site.grages, m.hits) {
   # make the cutadapt, bowtie step and save GATC granges from sequencing reads
   #
   # Args:
@@ -2026,10 +2031,11 @@ from.fastq.to.grange <- function(raw.files, multi.core, exp.name, adapt.seq,
   #   chromosom.nams: (vector or strings) the names of the chromosomes used
   #   restrict.site: (string) the restriction site sequence (mostly GATC :-)
   #   fasta.form:    (string) either 'fasta' or 'fastq'
-  #   dir.name.ca    (string) the name of the folder for cut read files
-  #   dir.name.bt    (string) the name of the folder for .bam/sam files
-  #   dir.name.gr    (string) the name of the folder for GRange Rdata files
-  #   res.site.grages (list of grange) all GATC granges (all,plus,minus,frag)
+  #   dir.name.ca:    (string) the name of the folder for cut read files
+  #   dir.name.bt:    (string) the name of the folder for .bam/sam files
+  #   dir.name.gr:    (string) the name of the folder for GRange Rdata files
+  #   res.site.grages: (list of grange) all GATC granges (all,plus,minus,frag)
+  #   m.hits: (int) the number of maximal hits in bowtie mapping
   #
   # Return:
   #   grange with metadata of all sites reads
@@ -2103,7 +2109,7 @@ from.fastq.to.grange <- function(raw.files, multi.core, exp.name, adapt.seq,
   # rune rbowtie
   alig.paths <- make.bowtie(bowtie.path, multi.core = multi.core,
                             genome.name = genome.name, pr.name = exp.name,
-                            dir.name.bt = dir.name.bt)
+                            dir.name.bt = dir.name.bt, m.hits = m.hits)
   # get path to bam files
   alig.paths.d.f <- data.frame(alig.paths)
   # get only path to sam/bam file
@@ -2176,11 +2182,11 @@ from.fastq.to.grange <- function(raw.files, multi.core, exp.name, adapt.seq,
 
   # calculate % of reads valide reads to export qc .txt file
   pres.usfull.reads <- gatc.star.reads.in.sam.file * 100 / raw.file.reads
-  rep.d.f <- data.frame("Raw reads" = raw.file.reads,
-                        "Cut reads" = cut.file.reads,
-                        "Mapped reads" = mapped.reads.in.sam.file,
-                        "GATC reads" = gatc.star.reads.in.sam.file,
-                        "% GATC reads of Raw reads" = pres.usfull.reads)
+  rep.d.f <- data.frame("Raw.reads" = raw.file.reads,
+                        "Cut.reads" = cut.file.reads,
+                        "Mapped.reads" = mapped.reads.in.sam.file,
+                        "GATC.reads" = gatc.star.reads.in.sam.file,
+                        "Percentage" = pres.usfull.reads)
   # give row names from sample
   row.names(rep.d.f) <- raw.files[,2]
   # save qc txt file
@@ -2512,7 +2518,7 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
                       mapping=T, qc=T,
                       species="BSgenome.Celegans.UCSC.ce10", chr.names = NULL,
                       restr.seq="GATC",
-                      normali=T, log10t=T, fasta.format="fastq") {
+                      normali=T, log10t=T, fasta.format="fastq", m.hits=1) {
   # DamID-seq pipeline: from sequencing reads to result: main, default function
   #
   # Args:
@@ -2541,6 +2547,8 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   #   log10t:  (bool) if the number of reads should be log190 transformed in the
   #            chromosomal distribution plots.
   #   fasta.format: (string) raw file format either 'fastq' or 'fasta'
+  #   m.hits: (int) the number of maximal hits in bowtie mapping
+  #           (1 = only unique hits)
   #
   # Return:
   #   list of GRanges (all, plus, minus, fragment, and also binned)
@@ -2575,11 +2583,6 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   # further in the pipeline.
   bc.genome <- get.genome(species, chr.names)
 
-  # get all chromosome name if chroms = NULL
-  if (is.null(chr.names)) {
-    chr.names <- seqnames(bc.genome)
-  }
-
   ## make all folders to store the resulting files
   # make cutadapter folder
   dir.name.ca <- "cutadapter"
@@ -2604,6 +2607,11 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
                                                   save.location = dir.name.gr,
                                                   chr.nam = chr.names)
 
+  # get all chromosome name if chroms = NULL
+  if (is.null(chr.names)) {
+    chr.names <- seqnames(bc.genome)
+  }
+
   # make quality control of sequencing files
   if (qc) {
     make.qc(raw.files, timestampm, exp.name = exp.name, rep.dir = qs.fold.name)
@@ -2621,18 +2629,19 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
                                          dir.name.ca = dir.name.ca,
                                          dir.name.bt = dir.name.bt,
                                          dir.name.gr = dir.name.gr,
-                                         res.site.grages)
+                                         res.site.grages,
+                                         m.hits = m.hits)
   } else {# or load granges with reads grange
     # prepare path and name to save results
     save.name.g <- paste(exp.name, timestampm, sep = "-")
     file.save.name <- file.path(getwd(), dir.name.gr, save.name.g)
     # import GRange with cut reads and make GATC Grange with metadata
     gatc.all.m.l <- make.full.gatc.grange.from.read.grange2(raw.files,
-                                                      save.nam = file.save.name,
-                                                      genom = species,
-                                                      restsite = restr.seq,
-                                                      chr.na = chr.names,
-                                                      res.site.grages)
+                                             save.nam = file.save.name,
+                                             genom = species,
+                                             restsite = restr.seq,
+                                             chr.na = chr.names,
+                                             res.site.grages = res.site.grages)
   }
 
   # make single grange out of grange list
@@ -2658,22 +2667,12 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   file.pa.f <- file.path(dir.name.res, file.na.f)
   save.table.from.grange(gatc.fragm, file.pa.f)
 
-  # delete minus, plus grange and fragment grange
-  #rm(gatc.plus.m, gatc.minus.m, gatc.fragm)
-
   # make empty bin grange
   bin.grange <- mapp.to.bins(bin.len, genom.bs = bc.genome,
                              chromo.names =  chr.names)
 
   ############
   ## make reads per bin out of reads per GATC site and save table
-
-  #make empty matrix of all metadata
-  #bin.metdata <- matrix(NA, nrow = length(bin.grange),
-  #                      ncol = length(elementMetadata(gatc.all.m)))
-
-  #colnames(bin.metdata) <- names(elementMetadata(gatc.all.m))
-
 
   # bin gatc grange to bin grange
   bin.grange <- find.all.overlaps.and.sum.metadata3(gatc.all.m, bin.grange,
@@ -2702,10 +2701,6 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
                                                       timestampm, exp.name,
                                                       dir.name.res)
 
-  # make list with number of methylated GATC sites
-  #s.na <- paste("number-of-methylates-sites-", exp.name, "-gatc-",  timestampm,
-  #              ".txt", sep = "")
-  #s.pa <- file.path(qs.fold.name, s.na)
 
   # plot data for defined bin sites
   plot.results(bin.grange, exp.name, timestampm, bin.name = toString(bin.len),
