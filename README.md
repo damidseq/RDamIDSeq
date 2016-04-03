@@ -9,7 +9,7 @@ install
 [R Project](https://www.r-project.org/ "The R Project for Statistical Computing")
 
 
-2) Download DamIDseq_0.1.2.tar.gz
+2) Download DamIDseq_0.1.3.tar.gz
 
 3) install additional packages needed for the pipeline in R   
 

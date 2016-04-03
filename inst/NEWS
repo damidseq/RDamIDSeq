@@ -1,3 +1,12 @@
+CHANGES IN VERSION 0.1.3
+-----------------------
+
+    o Small bug fixes when using only 1 chromosome
+    o export .bed file
+    o .bam files can be used as input file format
+    o variable mapping is changed to input.format and fasta.format is removed
+
+
 CHANGES IN VERSION 0.1.2
 -----------------------
 

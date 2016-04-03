@@ -1,8 +1,11 @@
 # Author:    Dominic Ritler (DR)
 # Contact:   dominic.ritler@students.unibe.ch
-# Version:   0.1.1
+# Version:   0.1.3
 #
 # Header:    DamID pipeline all in one. (Adapter removal, bowtie, analysis)
+
+# change log: change -Inf to 0 in the log2 fold change plot
+#             export also log2 fold change as grange
 
 
 ################################################################################
@@ -26,16 +29,25 @@ fuse.chr <- function(query.gr) {
   # make list with length of all listed chromosomes
   startplot <- rep(0, length(seqnames(query.gr)@values))
 
-  # first position is 0 then sum up the sum of the lengths of the previous
-  # chromosomes to the next chromosome.
-  for (i in 2:length(seqnames(query.gr)@values)) {
-    startplot[i] <- sum(chr.leng[1:i - 1])
-  }
+  # if more than 1 chromosome is chosen
+  if (length(chr.leng) > 1) {
 
-  # get the number of "hits" GATC sites for each chromosome
-  coordinates <- Rle(startplot, runLength(seqnames(query.gr)))
-  # add start value to the right position
-  coordinates <- as.vector(coordinates) + as.vector(start(query.gr))
+    # first position is 0 then sum up the sum of the lengths of the previous
+    # chromosomes to the next chromosome.
+    for (i in 2:length(seqnames(query.gr)@values)) {
+      startplot[i] <- sum(chr.leng[1:i - 1])
+    }
+
+    # get the number of "hits" GATC sites for each chromosome
+    coordinates <- Rle(startplot, runLength(seqnames(query.gr)))
+    # add start value to the right position
+    coordinates <- as.vector(coordinates) + as.vector(start(query.gr))
+
+  } else {
+
+    # make coordinates from 0 to length of the only chosen chromosome
+    coordinates <- as.vector(start(query.gr))
+  }
 
   return(coordinates)
 }
@@ -179,6 +191,9 @@ make.empty.genomicRange.bin3 <- function(animal, chrom.names,
   #   new genomicRange object with specific genomic ranges
   #
 
+  # set bin.grange zo NULL
+  bin.grange <- NULL # old version is not working as exist search in global env. ****************************
+
   # go over all chromosomes chosen in chrom.names
   for (chr in chrom.names) {
     # get length of chromosome
@@ -249,7 +264,7 @@ make.empty.genomicRange.bin3 <- function(animal, chrom.names,
 
     # test if grange exist if not (first for loop iteration) make one
     # otherwise concatenate the reads from the chromosome
-    if (!exists("bin.grange")) {
+    if (is.null(bin.grange)) {
       bin.grange <- tmp.gr
     } else {
       bin.grange <- append(bin.grange, tmp.gr)
@@ -387,9 +402,11 @@ load.pakage.main <- function(chr.packages, bio.packages) {
 ################################################################################
 
 find.all.overlaps.and.sum.metadata3 <- function(query.gr, subject.gr,
-                                                met.data=T, messag=T) {
+                                                met.data=T, messag=T,
+                                                sum.bin=T) {
   # Find genome overlaps in two GRange objects and return a list of hits per
   # grange of the query grange (use when binning granges).
+  # either sum (sum.bin=T) metadata or mean metadata (sum.bin=F)
   #
   # Args:
   #   query.gr:   (GRange) query grange file
@@ -397,6 +414,7 @@ find.all.overlaps.and.sum.metadata3 <- function(query.gr, subject.gr,
   #   meth.data:  (bool) F = matrix will be returned
   #                      T = query.gr will be returned with metadata
   #   messag: (bool) if a message should be made or not
+  #   sum.bin: (bool) if T values in bin are summed if F the mean is taken
   #
   # Return:
   #   If met.data=F datata.frame with number of overlaps in metadata
@@ -431,13 +449,20 @@ find.all.overlaps.and.sum.metadata3 <- function(query.gr, subject.gr,
   # of each bin (start, end = GATC grange index position)
   gatc.site.index <- PartitioningByWidth(width(overlaps.table))
 
+  # decide if bin gets summed up or the mean of the bin is taken
+  if (sum.bin) {
+    sum.or.mean <- viewSums
+  } else {
+    sum.or.mean <- viewMeans
+  }
+
   # go over all metadata and sum up reads per bin
   for (i in 1:met.rows) {
     # make list with 0 for each bin (0 reds per bin)
     reads.per.bin <- rep(0, length(subject.gr))
 
     # add the sum of GATC reads for each bin if bin has GATC reads
-    reads.per.bin[runValue(overlaps.table)] <- viewSums(Views(Rle(
+    reads.per.bin[runValue(overlaps.table)] <- sum.or.mean(Views(Rle(
       elementMetadata(query.gr)[queryHits(overlaps), i]), gatc.site.index))
 
     # add the sum of GATC reads per bin to the sample matrix
@@ -537,14 +562,16 @@ make.full.gatc.grange.from.read.grange2 <- function(file.nam,
   return(list(gatc.all.m, gatc.plus.m, gatc.minus.m, frag.gran))
 }
 
-make.log.fold.change <- function(granges, ids) {
+make.log.fold.change <- function(granges, ids, norm.tr=T) {
   # normalize reads and calculate fold change for every sample control pair
   # (sample1/sum(sample1) / control1/sum(control1))
   # then calculate the log2 of the mean fold change of all sample control pairs
+  # if norm.tr=F don’t do the normalization per total number of reads
   #
   # Args:
   #   granges: (granges)  granges with all reads in metadata
   #   ids: (list of 2) list with two vectors sampl.ids and control.ids
+  #   norm.tr: (bool) if norm by total number or reads should be made or not
   #
   # Return:
   #   matrix with mean log2 fold change
@@ -560,24 +587,73 @@ make.log.fold.change <- function(granges, ids) {
   res.matrix <- matrix(NA, nrow = length(meta.datas[,1]),
                        ncol = (length(meta.datas[1,])/2))
 
-  # loop over all sample control pairs (has been tested to have equal numbers)
-  for (i in 1:length(sampl)) {
+  if (norm.tr) {
+    # loop over all sample control pairs (has been tested to have equal numbers)
+    for (i in 1:length(sampl)) {
 
-    # sum the read number per sample and control for normalization
-    norm.sam <- sum(meta.datas[,sampl[i]])
-    norm.con <- sum(meta.datas[,contr[i]])
 
-    # change all 0 values to 1 as we don’t want to divide by zero
-    temp.cont.1 <- meta.datas[,contr[i]]
-    temp.cont.1[which(temp.cont.1 == 0)] <- 1
+      # add one to each sample and control position (no 0 in the sample)
+      temp.samp.1 <- meta.datas[,sampl[i]] + 1
+      temp.cont.1 <- meta.datas[,contr[i]] + 1
 
-    # make normalized reads reads/sum(reads)/control/sum(controls)
-    temp.reads <- (meta.datas[,sampl[i]] /  norm.sam) / (temp.cont.1 / norm.con)
-    res.matrix[,i] <- temp.reads
+      # sum the read number per sample and control for normalization
+      ##norm.sam <- sum(meta.datas[,sampl[i]])
+      ##norm.con <- sum(meta.datas[,contr[i]])
+
+      # take the sum
+      norm.sam <- sum(temp.samp.1)
+      norm.con <- sum(temp.cont.1)
+
+      # change all 0 values to 1 as we don’t want to divide by zero
+      #temp.cont.1 <- meta.datas[,contr[i]]
+      #temp.cont.1[which(temp.cont.1 == 0)] <- 1
+
+      # make normalized reads reads/sum(reads)/control/sum(controls)
+      ##temp.reads <- (meta.datas[,sampl[i]] / norm.sam) / (temp.cont.1 / norm.con)
+      temp.reads <- (temp.samp.1 / norm.sam) / (temp.cont.1 / norm.con)
+      res.matrix[,i] <- temp.reads
+    }
+  } else { # this is for data who are not binned and therefore have lot of 0
+    for (i in 1:length(sampl)) {
+      # change all 0 values to 1 as we don’t want to divide by zero and also
+      # don’t want to loos the value if 0 / x (0 as sample)
+      t.cont.1 <- meta.datas[,contr[i]]
+      t.samp.1 <- meta.datas[,sampl[i]]
+
+      # search all possition who control and sample is 0
+      sample.nul <- which(t.samp.1 == 0)
+      contr.null <- which(t.cont.1 == 0)
+
+      # find positions with sample and control as 0
+      both.null <- intersect(sample.nul, contr.null)
+
+      # the lowest value should be equal to 1 if we have 0.nnnn.
+      # give all 0 in the controls the lowest value of the samples
+      min.va <- min(t.samp.1)
+      if (min.va == 0) {
+       min.va <- min(t.samp.1[t.samp.1 != min(t.samp.1)])
+      }
+      t.cont.1[contr.null] <- min.va / 2
+
+      # the lowest value should be equal to 1 if we have 0.nnnn.
+      min.va <- min(t.cont.1)
+      if (min.va == 0) {
+        min.va <- min(t.cont.1[t.cont.1 != min(t.cont.1)])
+      }
+      # set only samples to a value where the control is not 0
+      sample.nul.no.c.nul <- sample.nul[-both.null]
+      t.samp.1[sample.nul.no.c.nul] <- min.va / 2
+      # make normalized reads reads / control
+      temp.reads <- t.samp.1  / t.cont.1
+      res.matrix[,i] <- temp.reads
+    }
   }
 
   # mean all rows, make log2 transformation and return values.
-  return(log2(rowMeans(res.matrix)))
+  lo.fo.ca <- log2(rowMeans(res.matrix))
+  lo.fo.ca[which(lo.fo.ca == -Inf)] <- 0 # cange -inf to 0
+
+  return(lo.fo.ca)
 }
 
 ################################################################################
@@ -1835,8 +1911,8 @@ test.input.data <- function(input.file, inputs) {
   # Args:
   #   input.file: (data.frame) the path, names, and type of the files.
   #   inputs: (list with objects) all the objects to test
-  #           multi.core, exp.name, bin.len, adapt.seq, errors, mapping, qc,
-  #           species, chr.names, restr.seq, normali, log10t, fasta.format
+  #           multi.core, exp.name, bin.len, adapt.seq, errors, input.format,
+  #           qc, species, chr.names, restr.seq, normali, log10t
   #
   # Return:
   #   atomic vector with indexes of sample.ids, controll.ids
@@ -1867,11 +1943,18 @@ test.input.data <- function(input.file, inputs) {
     stop(paste("errors:", toString(inputs[[5]]),
                "must be int: (n,...,-3,-2,-1,0,1,2,3,..,n)"))
   }
-  # test mapping
-  if (!is.logical(inputs[[6]])) {
-    stop(paste("mapping:", toString(inputs[[6]]),
-               "must be Boolean (logical, TRUE or FALSE)"))
+
+  # test input.format
+  if (inputs[[6]] != "fasta" & inputs[[6]] != "fastq") {
+    if (substring(inputs[[6]], 1, 1) != "b") {
+      if (substring(inputs[[6]], 1, 1) != "g") {
+        stop(paste("input.format:", toString(inputs[[6]]),
+                   "must be 'fastq', 'fasta', 'b' or 'g' of type",
+                   "character string"))
+      }
+    }
   }
+
   # test qc
   if (!is.logical(inputs[[7]])) {
     stop(paste("qc:", toString(inputs[[7]]),
@@ -1904,13 +1987,6 @@ test.input.data <- function(input.file, inputs) {
   if (!is.logical(inputs[[12]])) {
     stop(paste("log10t:", toString(inputs[[12]]),
                "must be Boolean (logical, TRUE or FALSE)"))
-  }
-  # fasta.format
-  if (inputs[[13]] != "fastq") {
-    if (inputs[[13]] != "fasta") {
-      stop(paste("fasta.format:", toString(inputs[[13]]),
-                 "must be 'fastq' or 'fasta' of type character string"))
-    }
   }
 
   #  test if raw.files have 3 or 2 columns
@@ -2005,14 +2081,154 @@ mapp.to.bins <- function(bin.len, genom.bs,  chromo.names) {
 
 
 ################################################################################
+##                            export bed files                                ##
+################################################################################
+export.bed.file <- function(gran.data, exp.name, s.c.id, norm.width=10,
+                            frag = F, bed.index="test", write.out = T) {
+  # export wig/bed file for UCSC genomeBrowser import (https://genome.ucsc.edu/)
+  # this script makes the rolling mean averaging after log2 fold change
+  #
+  # Args:
+  #   gran.data: (grange) the Grange object containing the reads information
+  #   exp.name: (string) the name of the wig file
+  #   s.c.id: (vector of 2 int) index of sample and control
+  #   norm.width: (integer) number of sliding region (standard = 10)
+  #   frag: (bool) if T a GATC fragment GRange is expects if F a GATC site
+  #   bed.index: (string) the name to put in the bed file
+  #   write.out: (bool) if output should be saved
+  #
+  # Return:
+  #   the grange with the log fold change in it if wirte.out = T (saves as bed)
+
+
+  # make log 2 fold change
+  # test if GATC fragment or site
+
+  if (frag) {
+    grange.em <- as.matrix(elementMetadata(gran.data))
+    # change NA to 0
+    grange.em[is.na(grange.em)] <- 0
+
+    # sum forward and revers read hits for each fragment
+    counter <- 1
+    # make emty matrix
+    new.met.dat <- matrix(nrow = length(grange.em[,1]),
+                          ncol = (length(grange.em[1,]) / 2))
+    colnames(new.met.dat) <- colnames(grange.em)[c(seq(1, length(grange.em[1,]),
+                                                       2))]
+
+    for (i in 1:(length(grange.em[1,]) / 2)) {
+      new.met.dat[,i] <- rowSums(grange.em[,c(counter, counter + 1)])
+      counter <- counter + 2
+    }
+    elementMetadata(gran.data) <- new.met.dat
+  }
+
+
+  # chrI is not allowed so must be changed to chr1 instead
+  lfc.matrix <- make.log.fold.change(gran.data, s.c.id, norm.tr = T)
+
+  # add log fold change to grange
+  elementMetadata(gran.data) <- lfc.matrix
+
+  # separate, split grange for chromosomes
+#  chr.gran <- split(gran.data, seqnames(gran.data))
+
+  #smoothing averaging with 10 GATC sites rolling over all.
+  #library(zoo)
+
+  # make empty result vector
+#   res.smooth.lfc <- NULL
+#
+#   # go over all chromosomes
+#   for (chr in seqnames(gran.data)@values) {
+#     # get metadata for chromosome
+#     temp.metdat <- elementMetadata(chr.gran[[chr]])[,1]
+#
+#     # make smoothing
+#     smooth.lfc <- rollapply(temp.metdat, width = norm.width, FUN = mean,
+#                             align = "center", partial = T) #, fill = NA)
+#
+#     # add chromosome to result vector
+#     res.smooth.lfc <- append(res.smooth.lfc, smooth.lfc)
+#   }
+
+  # delete all metadata
+#  elementMetadata(gran.data) <- NULL
+  # make 1 line of log fold change metadata
+#  elementMetadata(gran.data) <-  res.smooth.lfc
+
+
+  # assinge score as name for wig file
+  names(elementMetadata(gran.data)) <- "score"
+
+  bed.name    <- paste(exp.name, ".bed", sep = "")
+
+  if (write.out) {
+
+    # write home made bedGRaph
+    track.info <- paste('track type=bedGraph name="', bed.index,
+                        '" description="BedGraph format"',
+                        ' visibility=full color=200,100,0 altColor=0,100,200',
+                        ' priority=20', sep = "")
+    write.table(track.info, file = bed.name, row.names = F, col.names = F,
+                quote = F, eol = "\n")
+    bed.data.frame <- data.frame("chr" = seqnames(gran.data),
+                                 "start" = start(gran.data),
+                                 "stop" = end(gran.data),
+                                 "score" = elementMetadata(gran.data))
+    write.table(bed.data.frame, file = bed.name, row.names = F, col.names = F,
+                quote = F, eol = "\n", append = T)
+  }
+  return(gran.data)
+}
+
+################################################################################
+##                     combining multiple function to one                     ##
+################################################################################
+write.bed.file <- function(gran.data, exp.name, bed.index="test") {
+    # write bed file.
+    #
+    # Args:
+    #   gran.data: (grange) grange with 1 metadata column
+    #   exp.name: (string) the name of the wig file
+    #   bed.index: (string) the name to put in the bed file
+    #
+    # Return:
+    #   saves a .bed file
+
+  # give right name to metadata
+  names(elementMetadata(gran.data)) <- "score"
+
+  bed.name    <- paste(exp.name, ".bed", sep = "")
+
+    # write home made bedGRaph
+    track.info <- paste('track type=bedGraph name="', 'bin-',bed.index,
+                        '" description="BedGraph format"',
+                        ' visibility=full color=200,100,0 altColor=0,100,200',
+                        ' priority=20', sep = "")
+    write.table(track.info, file = bed.name, row.names = F, col.names = F,
+                quote = F, eol = "\n")
+
+    bed.data.frame <- data.frame("chr" = seqnames(gran.data),
+                                 "start" = start(gran.data),
+                                 "stop" = end(gran.data),
+                                 "score" = elementMetadata(gran.data))
+    write.table(bed.data.frame, file = bed.name, row.names = F, col.names = F,
+                quote = F, eol = "\n", append = T)
+
+}
+
+
+################################################################################
 ##                     combining multiple function to one                     ##
 ################################################################################
 from.fastq.to.grange <- function(raw.files, multi.core, exp.name, adapt.seq,
                                  errors, raw.file.name, timestampm, rep.dir,
                                  genome.name, chromosom.nams,
-                                 restrict.site="GATC", fasta.form="fastq",
+                                 restrict.site="GATC",
                                  dir.name.ca, dir.name.bt, dir.name.gr,
-                                 res.site.grages, m.hits) {
+                                 res.site.grages, m.hits, bam.o.fastq) {
   # make the cutadapt, bowtie step and save GATC granges from sequencing reads
   #
   # Args:
@@ -2030,101 +2246,123 @@ from.fastq.to.grange <- function(raw.files, multi.core, exp.name, adapt.seq,
   #   genome.name: (string)  the name of the genome (BSgenome)
   #   chromosom.nams: (vector or strings) the names of the chromosomes used
   #   restrict.site: (string) the restriction site sequence (mostly GATC :-)
-  #   fasta.form:    (string) either 'fasta' or 'fastq'
   #   dir.name.ca:    (string) the name of the folder for cut read files
   #   dir.name.bt:    (string) the name of the folder for .bam/sam files
   #   dir.name.gr:    (string) the name of the folder for GRange Rdata files
   #   res.site.grages: (list of grange) all GATC granges (all,plus,minus,frag)
   #   m.hits: (int) the number of maximal hits in bowtie mapping
+  #   bam.o.fastq: (string): 'fastq/a' = fastq/a, 'b' = bam imput file
   #
   # Return:
   #   grange with metadata of all sites reads
   #   save cut.fastq
   #   save mapped .bam files
 
-  ##############
-  ## read fastq and cutadapt step
 
-  # make empty vector to store the names and location of the cut fasta/q files
-  cut.file.name <- rep(NA, length(raw.files[,1]))
-  # make empty vector to store how many reads are in raw files and cut files
-  raw.file.reads <- rep(NA, length(raw.files[,1]))
-  cut.file.reads <- rep(NA, length(raw.files[,1]))
+  # test if input file format is fastq/a or bam.
+  # if fastq/a = rawreads, if ,bam = already mapped
+  f.o.b <- substring(bam.o.fastq, 1, 1)
 
-  # read all fasta/q files (in raw.files) and cut adapter
-  for (i in 1:length(raw.files[,1])) {
-    message(paste(format(Sys.time(), "%H:%M:%S:"), "Reading file:", i, "of",
-                  length(raw.files[,1]),"file:",  toString(raw.files[i,2])))
+  if (f.o.b == "f") {
 
-    # read raw file
-    temp.raw <- read.fastq(toString(raw.files[i,1]), fasta.for = fasta.form)
+    ##############
+    ## read fastq and cutadapt step
 
-    # store and print number of reads in raw file
-    raw.file.reads[i] <- length(temp.raw)
-    message(paste(format(Sys.time(), "%H:%M:%S:"), "Cut adapter for",
-                  toString(raw.files[i,2]), fasta.form,
-                  "; Total reads:", raw.file.reads[i]))
+    # make empty vector to store the names and location of the cut fasta/q files
+    cut.file.name <- rep(NA, length(raw.files[,1]))
+    # make empty vector to store how many reads are in raw files and cut files
+    raw.file.reads <- rep(NA, length(raw.files[,1]))
+    cut.file.reads <- rep(NA, length(raw.files[,1]))
 
-    # remove adapter either for fasta or fastq files
-    if (fasta.form == "fastq") {# for fastq
-      cut.file.ret <- make.cutadapt.fastq(temp.raw,
-                                          out.name = toString(raw.files[i,2]),
-                                          adapter = adapt.seq, error.a = errors,
-                                          res.site = restrict.site,
-                                          dir.name.ca = dir.name.ca)
-    } else {# for fasta
-      cut.file.ret <- make.cutadapt.fasta(temp.raw,
-                                          out.name = toString(raw.files[i,2]),
-                                          adapter = adapt.seq, error.a = errors,
-                                          res.site = restrict.site,
-                                          dir.name.ca = dir.name.ca)
+    # read all fasta/q files (in raw.files) and cut adapter
+    for (i in 1:length(raw.files[,1])) {
+      message(paste(format(Sys.time(), "%H:%M:%S:"), "Reading file:", i, "of",
+                    length(raw.files[,1]),"file:",  toString(raw.files[i,2])))
+
+      # read raw file
+      temp.raw <- read.fastq(toString(raw.files[i,1]), fasta.for = bam.o.fastq)
+
+      # store and print number of reads in raw file
+      raw.file.reads[i] <- length(temp.raw)
+      message(paste(format(Sys.time(), "%H:%M:%S:"), "Cut adapter for",
+                    toString(raw.files[i,2]), bam.o.fastq,
+                    "; Total reads:", raw.file.reads[i]))
+
+      # remove adapter either for fasta or fastq files
+      if (bam.o.fastq == "fastq") {# for fastq
+        cut.file.ret <- make.cutadapt.fastq(temp.raw,
+                                            out.name = toString(raw.files[i,2]),
+                                            adapter = adapt.seq,
+                                            error.a = errors,
+                                            res.site = restrict.site,
+                                            dir.name.ca = dir.name.ca)
+      } else {# for fasta
+        cut.file.ret <- make.cutadapt.fasta(temp.raw,
+                                            out.name = toString(raw.files[i,2]),
+                                            adapter = adapt.seq,
+                                            error.a = errors,
+                                            res.site = restrict.site,
+                                            dir.name.ca = dir.name.ca)
+      }
+
+      # store file name and number of reads in cut read file
+      cut.file.name[i]  <- cut.file.ret[1]
+      cut.file.reads[i] <- as.integer(cut.file.ret[2])
+      # print number of cut reads
+      message(paste(format(Sys.time(), "%H:%M:%S:"), cut.file.reads[i],
+                    "out of",
+                    raw.file.reads[i], "reads had adapter and start with",
+                    restrict.site,
+                    round(cut.file.reads[i] * 100 / raw.file.reads[i],
+                          digits = 5), "%"))
     }
 
-    # store file name and number of reads in cut read file
-    cut.file.name[i]  <- cut.file.ret[1]
-    cut.file.reads[i] <- as.integer(cut.file.ret[2])
-    # print number of cut reads
-    message(paste(format(Sys.time(), "%H:%M:%S:"), cut.file.reads[i], "out of",
-                  raw.file.reads[i], "reads had adapter and start with",
-                  restrict.site,
-                  round(cut.file.reads[i] * 100 / raw.file.reads[i],
-                        digits = 5), "%"))
+    # make tab separated list with cut read list for bowtie and save it
+    bow.path <- file.path(getwd(), dir.name.ca, cut.file.name)
+    bowtie.list <- data.frame("FileName" = bow.path, "SampleName" = raw.files[,2])
+    # make file name and path
+    bowtie.name <- paste("bowtie-import", timestampm, basename(raw.file.name),
+                         sep = "-")
+    bowtie.path <- file.path(getwd(), dir.name.bt, bowtie.name)
+    # write cut read index file for QuasR import
+    write.table(bowtie.list,
+                file = bowtie.path, eol = "\r\n", col.names = T,
+                row.names = F, quote = F, sep = "\t")
+
+
+    ##############
+    #### bowtie step
+
+    # rune rbowtie
+    alig.paths <- make.bowtie(bowtie.path, multi.core = multi.core,
+                              genome.name = genome.name, pr.name = exp.name,
+                              dir.name.bt = dir.name.bt, m.hits = m.hits)
+    # get path to bam files
+    alig.paths.d.f <- data.frame(alig.paths)
+    # get only path to sam/bam file
+    sam.directories <- alig.paths.d.f[,1]
+
+
+  } else {# if the input files arealready mapped .bam files
+    sam.directories <- as.vector(raw.files[,1])
+    alig.paths.d.f <- data.frame(raw.files[,1], raw.files[,2])
+    # set number of original reads to NA
+    raw.file.reads <- 1
+    # set number of cut reads to NA
+    cut.file.reads <- 1
   }
-
-  # make tab separated list with cut read list for bowtie and save it
-  bow.path <- file.path(getwd(), dir.name.ca, cut.file.name)
-  bowtie.list <- data.frame("FileName" = bow.path, "SampleName" = raw.files[,2])
-  # make file name and path
-  bowtie.name <- paste("bowtie-import", timestampm, basename(raw.file.name),
-                       sep = "-")
-  bowtie.path <- file.path(getwd(), dir.name.bt, bowtie.name)
-  # write cut read index file for QuasR import
-  write.table(bowtie.list,
-              file = bowtie.path, eol = "\r\n", col.names = T,
-              row.names = F, quote = F, sep = "\t")
-
-  ##############
-  #### bowtie step
-
-  # rune rbowtie
-  alig.paths <- make.bowtie(bowtie.path, multi.core = multi.core,
-                            genome.name = genome.name, pr.name = exp.name,
-                            dir.name.bt = dir.name.bt, m.hits = m.hits)
-  # get path to bam files
-  alig.paths.d.f <- data.frame(alig.paths)
-  # get only path to sam/bam file
-  sam.directories <- alig.paths.d.f[,1]
 
   # copy GATC site grange to leave gatc.all untouched.
   gatc.all.m     <- res.site.grages[[1]] # for all GATC sites
   gatc.plus.m    <- res.site.grages[[2]] # for plus sites
   gatc.minus.m   <- res.site.grages[[3]] # for minus sites
-  gatc.frag.m    <- res.site.grages[[4]]
+  gatc.frag.m    <- res.site.grages[[4]] # for fragments
 
   # make empty vector to store number of reads in the .bam file
   mapped.reads.in.sam.file <- rep(NA, length(alig.paths.d.f[,1]))
   # make empty vector to store number of valide reads in .bam file
   gatc.star.reads.in.sam.file <- rep(NA, length(alig.paths.d.f[,1]))
+
 
   message(paste(format(Sys.time(), "%H:%M:%S:"),
                 "Start mapping to restriction sites", sep = " "))
@@ -2507,18 +2745,21 @@ plot.log.fold.change <- function(gran.bin, sap.cot.ids, f.path, exp.name) {
                           plot.size = c(12,8), met.dat.name = "lfc",
                           d.type = "NA", font.size = font.size.main)
   dev.off() # close pdf
+
+  # return log2 fold change
+  return(bin.lfc.grange)
+
 }
 
 
 ################################################################################
 ##                                main  function                              ##
 ################################################################################
-damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
-                      bin.len=100000, adapt.seq="CGCGGCCGAG", errors=1,
-                      mapping=T, qc=T,
+damid.seq <- function(raw.file.name, input.format="fastq", multi.core=F,
+                      exp.name="damid-gatc-sites", bin.len=100000,
+                      adapt.seq="CGCGGCCGAG", errors=1, qc=T,
                       species="BSgenome.Celegans.UCSC.ce10", chr.names = NULL,
-                      restr.seq="GATC",
-                      normali=T, log10t=T, fasta.format="fastq", m.hits=1) {
+                      restr.seq="GATC", normali=T, log10t=T, m.hits=1) {
   # DamID-seq pipeline: from sequencing reads to result: main, default function
   #
   # Args:
@@ -2528,15 +2769,18 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   #                  column 1: path and name to the sequencing files
   #                  column 2: name of the sample starting with a letter
   #                  column 3: (optional) group 's'=sample and 'c'=control
+  #   input.format:  (string) if 'fa' / 'f' fastq sequencing reads are cut,
+  #               mapped, if 'gr' / 'g' cut and mapping is skipped.
+  #               Instead of fastq sequencing reads already mapped
+  #               GRanges are listed in in raw.file.name
+  #               if 'bam' / 'b' .bam file must be listed in the raw.file.name
+  #               list as the mapping is scipped
   #   multi.core: (bool) if T all cores of the machine is used
   #               (some machine have trouble using multicore)
   #   exp.name:   (string) freely chosen name of the experiment
   #   bin.len:    (int) length of the bins
   #   adapt.seq:  (string) the sequence of the adapter
   #   errors:     (int) how many errors allowed in the cutadapt process.
-  #   mapping:    (bool) if T fastq sequencing reads are cut, mapped,
-  #               if F cut and mapping is skipped. Instead of fastq sequencing
-  #               reads already mapped GRanges are listed in in raw.file.name
   #   qc:   (bool) if quality of sequencing reads should be tested (fastqc)
   #   species: (string) the name of the BSgenome package
   #   chr.names: (vector of strings) name of the chromosomes to be considered
@@ -2546,7 +2790,6 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   #            distribution plots.
   #   log10t:  (bool) if the number of reads should be log190 transformed in the
   #            chromosomal distribution plots.
-  #   fasta.format: (string) raw file format either 'fastq' or 'fasta'
   #   m.hits: (int) the number of maximal hits in bowtie mapping
   #           (1 = only unique hits)
   #
@@ -2563,9 +2806,10 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   # sap.cot.ids is NULL if no log2 fold change should be made
   # also test the rest of the input data
   sap.cot.ids <- test.input.data(raw.files, list(multi.core, exp.name, bin.len,
-                                                 adapt.seq, errors, mapping, qc,
+                                                 adapt.seq, errors,
+                                                 input.format, qc,
                                                  species, chr.names, restr.seq,
-                                                 normali, log10t, fasta.format))
+                                                 normali, log10t))
   # set if log2 fold change should be made at the end of the pipeline
   if (length(sap.cot.ids) == 0) {
     lfc = F
@@ -2618,19 +2862,20 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
   }
 
   # cut adapter, map reads using bowtie, save grange with reads per GATC
-  if (mapping) {
+  fir.in.chr <- substring(input.format, 1, 1) # get fist character
+  if (fir.in.chr == "f" | fir.in.chr == "b") {
     gatc.all.m.l <- from.fastq.to.grange(raw.files, multi.core, exp.name,
                                          adapt.seq, errors, raw.file.name,
                                          timestampm, rep.dir = qs.fold.name,
                                          genome.name = species,
                                          chromosom.nams = chr.names,
                                          restrict.site = restr.seq,
-                                         fasta.form = fasta.format,
                                          dir.name.ca = dir.name.ca,
                                          dir.name.bt = dir.name.bt,
                                          dir.name.gr = dir.name.gr,
                                          res.site.grages,
-                                         m.hits = m.hits)
+                                         m.hits = m.hits,
+                                         bam.o.fastq = input.format)
   } else {# or load granges with reads grange
     # prepare path and name to save results
     save.name.g <- paste(exp.name, timestampm, sep = "-")
@@ -2713,7 +2958,7 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
                                                   dir.name.res)
 
   ##############
-  ## plot log2 fold change
+  ## plot log2 fold change and make bed file.
 
   if (lfc) {
     # make path and name for log2 fold change plot
@@ -2724,11 +2969,35 @@ damid.seq <- function(raw.file.name, multi.core=F, exp.name="damid-gatc-sites",
     message(paste(format(Sys.time(), "%H:%M:%S:"), "Plot log2 fold change"))
 
     # plot result
-    plot.log.fold.change(bin.grange, sap.cot.ids, f.path.r, exp.name)
+    lof2.f <- plot.log.fold.change(bin.grange, sap.cot.ids, f.path.r, exp.name)
+
+
+    ## print .bed file
+    file.na.b <- paste(exp.name, "-", toString(bin.len), "-",
+                     timestampm, sep = "")
+    file.pa.b <- file.path(dir.name.res, file.na.b)
+
+
+    export.bed.file(gatc.all.m, file.pa.b, sap.cot.ids, norm.width = 10,
+                   frag = F, bed.index = exp.name, write.out = T)
+
+
+    file.na.b <- paste(exp.name, "-", toString(bin.len), "-", bin.len,
+                       "-bp-bin-", timestampm,  sep = "")
+    file.pa.b <- file.path(dir.name.res, file.na.b)
+
+    # export bed file using bins
+    write.bed.file(lof2.f, file.pa.b, bed.index = paste(exp.name, "bin"))
   }
 
   # return bin and GATC grange
-  return(list("GATC" = gatc.all.m, "GATC.plus" = gatc.plus.m,
-              "GATC.minus" = gatc.minus.m, "GATC.frag" = gatc.fragm,
-              "bins" = bin.grange))
+  if (lfc) {
+    return(list("GATC" = gatc.all.m, "GATC.plus" = gatc.plus.m,
+                "GATC.minus" = gatc.minus.m, "GATC.frag" = gatc.fragm,
+                "bins" = bin.grange, "lfc" = lof2.f))
+  } else {
+    return(list("GATC" = gatc.all.m, "GATC.plus" = gatc.plus.m,
+                "GATC.minus" = gatc.minus.m, "GATC.frag" = gatc.fragm,
+                "bins" = bin.grange))
+  }
 }

@@ -1,0 +1,20 @@
+citHeader("Please use the DamIDseq reference below to cite the software itself.")
+
+citEntry(entry="article",
+	 title="Tools for DNA adenine methyltransferase identification analysis of nuclear organization during C. elegans development.",
+	 author=personList(as.person("Rahul Sharma"), as.person("Dominic Ritler"),
+                     as.person("Peter Meister")),
+	 journal="Genesis",
+         volume="xx",
+         number="x",
+         pages="xxxx--xxxx",
+	 year=2016,
+	 note="PMID:26845390",
+         doi="10.1002/dvg.22925",
+	 textVersion="XXX"
+)
+
+citFooter("This free open-source software implements academic
+research by the authors and co-workers. If you use it,
+please support the project by citing the appropriate
+journal articles.")
