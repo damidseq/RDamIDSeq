@@ -4,9 +4,6 @@
 #
 # Header:    DamID pipeline all in one. (Adapter removal, bowtie, analysis)
 
-# change log: change -Inf to 0 in the log2 fold change plot
-#             export also log2 fold change as grange
-
 
 ################################################################################
 ##                               functions                                    ##
@@ -593,24 +590,24 @@ make.log.fold.change <- function(granges, ids, norm.tr=T) {
 
 
       # add one to each sample and control position (no 0 in the sample)
-      temp.samp.1 <- meta.datas[,sampl[i]] + 1
-      temp.cont.1 <- meta.datas[,contr[i]] + 1
+      #temp.samp.1 <- meta.datas[,sampl[i]] + 1
+      #temp.cont.1 <- meta.datas[,contr[i]] + 1
 
       # sum the read number per sample and control for normalization
-      ##norm.sam <- sum(meta.datas[,sampl[i]])
-      ##norm.con <- sum(meta.datas[,contr[i]])
+      norm.sam <- sum(meta.datas[,sampl[i]])
+      norm.con <- sum(meta.datas[,contr[i]])
 
       # take the sum
-      norm.sam <- sum(temp.samp.1)
-      norm.con <- sum(temp.cont.1)
+      #norm.sam <- sum(temp.samp.1)
+      #norm.con <- sum(temp.cont.1)
 
       # change all 0 values to 1 as we don’t want to divide by zero
-      #temp.cont.1 <- meta.datas[,contr[i]]
-      #temp.cont.1[which(temp.cont.1 == 0)] <- 1
+      temp.cont.1 <- meta.datas[,contr[i]]
+      temp.cont.1[which(temp.cont.1 == 0)] <- 1
 
       # make normalized reads reads/sum(reads)/control/sum(controls)
-      ##temp.reads <- (meta.datas[,sampl[i]] / norm.sam) / (temp.cont.1 / norm.con)
-      temp.reads <- (temp.samp.1 / norm.sam) / (temp.cont.1 / norm.con)
+      temp.reads <- (meta.datas[,sampl[i]] / norm.sam) / (temp.cont.1 / norm.con)
+      #temp.reads <- (temp.samp.1 / norm.sam) / (temp.cont.1 / norm.con)
       res.matrix[,i] <- temp.reads
     }
   } else { # this is for data who are not binned and therefore have lot of 0
@@ -2126,7 +2123,7 @@ export.bed.file <- function(gran.data, exp.name, s.c.id, norm.width=10,
 
 
   # chrI is not allowed so must be changed to chr1 instead
-  lfc.matrix <- make.log.fold.change(gran.data, s.c.id, norm.tr = T)
+  lfc.matrix <- make.log.fold.change(gran.data, s.c.id, norm.tr = F)
 
   # add log fold change to grange
   elementMetadata(gran.data) <- lfc.matrix
