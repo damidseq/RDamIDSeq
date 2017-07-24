@@ -2,6 +2,8 @@
 All in R DamID sequencing pipeline.  
 Includes adapter removal, Mapping and enrichment finding for DamID-Seq reads.
 
+For more information see also: [Tools for DNA adenine methyltransferase identification analysis of nuclear organization during C. elegans development](http://onlinelibrary.wiley.com/doi/10.1002/dvg.22925/abstract)
+
 install
 -------
 
