@@ -24,7 +24,7 @@ install
 4) install DamIDSeq in R   
 (exchange `PATH` with the path to the installation file on your disk)  
 
-`install.packages("PATH/DamIDseq_0.1.1.tar.gz", repos = NULL, type = "source")`  
+`install.packages("PATH/DamIDseq_0.1.3.tar.gz", repos = NULL, type = "source")`  
 
 
 
